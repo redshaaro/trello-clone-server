@@ -1,7 +1,7 @@
 const { board } = require("../../models")
 const getAllBoards = async (req, res) => {
     try {
-        console.log(req.userId)
+        if (!req.userId) return res.status(401).json({ message: "unauthorized access" })
         const boards = await board.findAll({ where: { user_id: req.userId } })
         res.status(200).json({ message: "success", boards })
 
@@ -14,12 +14,15 @@ const getAllBoards = async (req, res) => {
 }
 const createBoard = async (req, res) => {
     const { name } = req.body
-    console.log(name)
+    if (!req.userId) return res.status(401).json({ message: "unauthorized access" })
+
+
 
     try {
+
         const createdboard = await board.create({
             name: name,
-            user_id: 1
+            user_id: req.userId
 
         })
         console.log(createdboard.dataValues)
@@ -34,11 +37,12 @@ const createBoard = async (req, res) => {
 }
 const getBoardById = async (req, res) => {
     const { id } = req.params
-    console.log(id)
+    if (!req.userId) return res.status(401).json({ message: "unauthorized access" })
+
 
     try {
         const found = await board.findAll({
-            where: { id: id }
+            where: { id: id, user_id: req.userId }
 
 
         })
@@ -53,40 +57,52 @@ const getBoardById = async (req, res) => {
 
 }
 const editBoard = async (req, res) => {
-    const { id } = req.params
-    const { name } = req.body
+    const { id } = req.params;
+    const { name } = req.body;
 
+    if (!req.userId) return res.status(401).json({ message: "Unauthorized access" });
 
     try {
-        const updated = await board.update({ name: name }, { where: { id: id } })
-        console.log(updated)
+        const [affectedRows] = await board.update(
+            { name },
+            {
+                where: {
+                    id,
+                    user_id: req.userId,
+                },
+            }
+        );
 
-        res.status(200).json({ message: "success", editedboard: updated })
+        if (affectedRows === 0) {
+            return res.status(403).json({ message: "Forbidden: You do not have permission to edit this board" });
+        }
 
+        res.status(200).json({ message: "Success", editedboard: { id, name } });
     } catch (err) {
-        console.log(err)
-        res.status(500).json({ message: "Coudn't create new board" })
-
+        console.log(err);
+        res.status(500).json({ message: "Couldn't update board" });
     }
+};
 
-}
 const deleteBoard = async (req, res) => {
-    const { id } = req.params
+    const { id } = req.params;
 
-
+    if (!req.userId) return res.status(401).json({ message: "Unauthorized access" });
 
     try {
-        const deleted = await board.destroy({ where: { id: id } })
-        console.log(deleted)
+        const deleted = await board.destroy({
+            where: { id, user_id: req.userId },
+        });
 
-        res.status(200).json({ message: "success", deletedboard: deleted })
+        if (deleted === 0) {
+            return res.status(403).json({ message: "Forbidden: You do not have permission to delete this board" });
+        }
 
+        res.status(200).json({ message: "Success", deletedboard: id });
     } catch (err) {
-        console.log(err)
-        res.status(500).json({ message: "Coudn't create new board" })
-
+        console.log(err);
+        res.status(500).json({ message: "Couldn't delete board" });
     }
+};
 
-}
-
-module.exports = { getAllBoards, createBoard, getBoardById, editBoard ,deleteBoard}
+module.exports = { getAllBoards, createBoard, getBoardById, editBoard, deleteBoard }

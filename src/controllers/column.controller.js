@@ -1,70 +1,69 @@
-const { column } = require("../../models")
+const { column, board } = require("../../models");
+
 const createColumn = async (req, res) => {
-    const { name } = req.body
-    console.log(name)
+    const { name, boardId } = req.body;
+    if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
 
     try {
-        const createdColumn = await column.create({
-            name: name,
-            board_id: 3
+         
+        const foundBoard = await board.findOne({ where: { id: boardId, user_id: req.userId } });
+        if (!foundBoard) return res.status(403).json({ message: "Forbidden: Board not found or not yours" });
 
-        })
-
-        res.status(200).json({ message: "success", createdcolumn: createColumn.dataValues })
-
+        const createdColumn = await column.create({ name, board_id: boardId });
+        res.status(200).json({ message: "success", createdColumn: createdColumn.dataValues });
     } catch (err) {
-        console.log(err)
-        res.status(500).json({ message: "Coudn't create new column " })
-
+        console.log(err);
+        res.status(500).json({ message: "Couldn't create new column" });
     }
+};
 
-}
-const getAllColumns = async (req, res) => {
+const getColumnsByBoard = async (req, res) => {
+    const { boardId } = req.params;
+    if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
+
     try {
-        const columns = await column.findAll()
-        res.status(200).json({ message: "success", columns })
+        const foundBoard = await board.findOne({ where: { id: boardId, user_id: req.userId } });
+        if (!foundBoard) return res.status(403).json({ message: "Forbidden: Board not found or not yours" });
 
+        const columns = await column.findAll({ where: { board_id: boardId } });
+        res.status(200).json({ message: "Success", columns });
     } catch (err) {
-        console.log(err)
-        res.status(500).json({ message: "Coudn't fetch columns" })
-
+        console.log(err);
+        res.status(500).json({ message: "Couldn't fetch columns" });
     }
+};
 
-}
 const editColumn = async (req, res) => {
-    const { id } = req.params
-    const { name } = req.body
-
+    const { id } = req.params;
+    const { name } = req.body;
+    if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
 
     try {
-        const updated = await column.update({ name: name }, { where: { id: id } })
-        console.log(updated)
+        const foundColumn = await column.findOne({ where: { id }, include: { model: board, where: { user_id: req.userId } } });
+        if (!foundColumn) return res.status(403).json({ message: "Forbidden: Column not found or not yours" });
 
-        res.status(200).json({ message: "success", editedcolumn: updated })
-
+        const updated = await column.update({ name }, { where: { id } });
+        res.status(200).json({ message: "success", editedColumn: updated });
     } catch (err) {
-        console.log(err)
-        res.status(500).json({ message: "Coudn't update column" })
-
+        console.log(err);
+        res.status(500).json({ message: "Couldn't update column" });
     }
+};
 
-}
 const deleteColumn = async (req, res) => {
-    const { id } = req.params
-
-
+    const { id } = req.params;
+    if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
 
     try {
-        const deleted = await column.destroy({ where: { id: id } })
-        console.log(deleted)
+        const foundColumn = await column.findOne({ where: { id }, include: { model: board, where: { user_id: req.userId } } });
+        if (!foundColumn) return res.status(403).json({ message: "Forbidden: Column not found or not yours" });
 
-        res.status(200).json({ message: "success", deletedcolumn: deleted })
-
+        const deleted = await column.destroy({ where: { id } });
+        res.status(200).json({ message: "success", deletedColumn: deleted });
     } catch (err) {
-        console.log(err)
-        res.status(500).json({ message: "Coudn't delete board" })
-
+        console.log(err);
+        res.status(500).json({ message: "Couldn't delete column" });
     }
+};
 
-}
-module.exports = { createColumn, getAllColumns, editColumn, deleteColumn }
+module.exports = { createColumn, getColumnsByBoard, editColumn, deleteColumn };

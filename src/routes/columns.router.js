@@ -1,10 +1,11 @@
 const express = require('express')
-const { getAllColumns, createColumn, editColumn, deleteColumn } = require("../controllers/column.controller")
+const { getColumnsByBoard, createColumn, editColumn, deleteColumn } = require("../controllers/column.controller")
+const verifyToken = require('../middlewares/authMiddleware')
 const router = express.Router()
-router.get("/", getAllColumns)
-router.post("/", createColumn)
- 
+router.get("/:boardId", verifyToken, getColumnsByBoard)
+router.post("/",verifyToken, createColumn)
 
-router.put("/:id", editColumn)
-router.delete("/:id", deleteColumn)
+
+router.put("/:id",verifyToken, editColumn)
+router.delete("/:id",verifyToken, deleteColumn)
 module.exports = router
