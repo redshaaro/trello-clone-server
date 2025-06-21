@@ -14,7 +14,7 @@ const getAlltasks = async (req, res) => {
 }
 const createtask = async (req, res) => {
     const { title, description, status } = req.body
-   
+
 
     try {
         const createdtask = await task.create({
@@ -56,7 +56,7 @@ const gettaskById = async (req, res) => {
 }
 const edittask = async (req, res) => {
     const { id } = req.params
-    const { title} = req.body
+    const { title } = req.body
 
 
     try {

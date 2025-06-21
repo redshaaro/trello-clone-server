@@ -1,7 +1,8 @@
 const { board } = require("../../models")
 const getAllBoards = async (req, res) => {
     try {
-        const boards = await board.findAll()
+        console.log(req.userId)
+        const boards = await board.findAll({ where: { user_id: req.userId } })
         res.status(200).json({ message: "success", boards })
 
     } catch (err) {
