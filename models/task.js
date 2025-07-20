@@ -16,10 +16,13 @@ module.exports = (sequelize, DataTypes) => {
         key: "id"
       },
       onDelete: 'CASCADE'
+    }, position: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
     }
   });
 
-  task.associate = function(models) {
+  task.associate = function (models) {
     task.belongsTo(models.column, { foreignKey: 'column_id' });
   };
 

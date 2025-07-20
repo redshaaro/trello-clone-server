@@ -1,4 +1,8 @@
 const { task, column, board } = require("../../models");
+const { Op } = require("sequelize");
+
+const { sequelize } = require("../../models"); // adjust path as needed
+
 
 // ✅ GET all tasks for a specific column (and verify it's the user's board)
 const getAlltasks = async (req, res) => {
@@ -41,13 +45,22 @@ const createtask = async (req, res) => {
     if (!foundColumn) {
       return res.status(403).json({ message: "Forbidden: Column not found or not yours" });
     }
+    const lastTask = await task.findOne({
+      where: { column_id },
+      order: [['position', 'DESC']]
+    });
+
+    const newPosition = lastTask ? lastTask.position + 1 : 0;
 
     const createdtask = await task.create({
       title,
       description,
       status,
-      column_id
+      column_id,
+      position: newPosition
     });
+
+
 
     res.status(200).json({ message: "success", createdtask: createdtask.dataValues });
 
@@ -145,5 +158,93 @@ const deletetask = async (req, res) => {
     res.status(500).json({ message: "Couldn't delete task" });
   }
 };
+// ✅ Move task to new column or reorder within same column
+const moveTask = async (req, res) => {
+  try {
+    const { taskId, sourceColumnId, targetColumnId, targetPosition } = req.body;
 
-module.exports = { getAlltasks, createtask, gettaskById, edittask, deletetask };
+    if (!taskId || !sourceColumnId || !targetColumnId || targetPosition === undefined) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const taskfound = await task.findByPk(taskId);
+    if (!taskfound) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    const sourcePosition = taskfound.position;
+
+    if (typeof sourcePosition !== 'number' || typeof targetPosition !== 'number') {
+      return res.status(400).json({ error: "Invalid task position values" });
+    }
+
+    // Step 1: Shift down tasks in source column (only if moving to different column)
+    if (sourceColumnId !== targetColumnId) {
+      await task.update(
+        { position: sequelize.literal('"position" - 1') },
+        {
+          where: {
+            column_id: sourceColumnId,
+            position: { [Op.gt]: sourcePosition },
+          },
+        }
+      );
+
+      // Step 2: Shift up tasks in target column
+      await task.update(
+        { position: sequelize.literal('"position" + 1') },
+        {
+          where: {
+            column_id: targetColumnId,
+            position: { [Op.gte]: targetPosition },
+          },
+        }
+      );
+    } else {
+      // Moving inside the same column
+      if (targetPosition > sourcePosition) {
+        // Move down: shift tasks between old+1 and targetPosition down
+        await task.update(
+          { position: sequelize.literal('"position" - 1') },
+          {
+            where: {
+              column_id: sourceColumnId,
+              position: {
+                [Op.gt]: sourcePosition,
+                [Op.lte]: targetPosition,
+              },
+            },
+          }
+        );
+      } else if (targetPosition < sourcePosition) {
+        // Move up: shift tasks between targetPosition and old-1 up
+        await task.update(
+          { position: sequelize.literal('"position" + 1') },
+          {
+            where: {
+              column_id: sourceColumnId,
+              position: {
+                [Op.gte]: targetPosition,
+                [Op.lt]: sourcePosition,
+              },
+            },
+          }
+        );
+      }
+    }
+
+    // Step 3: Update task itself
+    taskfound.column_id = targetColumnId;
+    taskfound.position = targetPosition;
+    await taskfound.save();
+
+    return res.status(200).json({ message: "Task moved successfully" });
+  } catch (error) {
+    console.error("Move Task Error:", error);
+    return res.status(500).json({ message: "Couldn't move task", details: error.message });
+  }
+};
+
+
+
+module.exports = { getAlltasks, createtask, gettaskById, edittask, deletetask, moveTask };

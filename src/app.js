@@ -3,9 +3,12 @@ const boards = require("./routes/boards.router")
 const columns = require("./routes/columns.router")
 const tasks = require("./routes/tasks.router")
 const auth = require("./routes/auth.router")
+const cors=require("cors")
 require("dotenv").config()
 const app = express()
 app.use(express.json())
+app.use(cors());
+
 
 app.use("/api/boards", boards)
 app.use("/api/columns", columns)

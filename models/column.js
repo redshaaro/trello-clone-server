@@ -10,10 +10,14 @@ module.exports = (sequelize, DataTypes) => {
         key: 'id'
       },
       onDelete: 'CASCADE'
+    }, position: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0
     }
   });
 
-  column.associate = function(models) {
+  column.associate = function (models) {
     column.belongsTo(models.board, { foreignKey: 'board_id' });
     column.hasMany(models.task, { foreignKey: 'column_id' }); // ✅ Now tasks belong here
   };

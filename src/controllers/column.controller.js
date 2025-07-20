@@ -1,11 +1,12 @@
-const { column, board } = require("../../models");
+const { column, board, sequelize } = require("../../models");
+
 
 const createColumn = async (req, res) => {
     const { name, boardId } = req.body;
     if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
 
     try {
-         
+
         const foundBoard = await board.findOne({ where: { id: boardId, user_id: req.userId } });
         if (!foundBoard) return res.status(403).json({ message: "Forbidden: Board not found or not yours" });
 
@@ -65,5 +66,72 @@ const deleteColumn = async (req, res) => {
         res.status(500).json({ message: "Couldn't delete column" });
     }
 };
+const moveColumn = async (req, res) => {
+    
 
-module.exports = { createColumn, getColumnsByBoard, editColumn, deleteColumn };
+    const {columnId, sourceIndex, targetIndex } = req.body;
+    const id=columnId
+    console.log("BODY:", req.body);
+
+    if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
+
+    if (sourceIndex === undefined || targetIndex === undefined) {
+        return res.status(400).json({ message: "Missing source or target position" });
+    }
+
+    try {
+        // Ensure the column belongs to the logged-in user
+        const foundColumn = await column.findOne({
+            where: { id },
+            include: {
+                model: board,
+                where: { user_id: req.userId },
+            },
+        });
+
+        if (!foundColumn) {
+            return res.status(403).json({ message: "Forbidden: Column not found or not yours" });
+        }
+
+        const boardId = foundColumn.board_id;
+
+        await sequelize.transaction(async (t) => {
+            // Fetch all columns of the board in order
+            const allColumns = await column.findAll({
+                where: { board_id: boardId },
+                order: [['position', 'ASC']],
+                transaction: t,
+            });
+
+            // Make sure source/target are within bounds
+            if (
+                sourceIndex < 0 ||
+                sourceIndex >= allColumns.length ||
+                targetIndex < 0 ||
+                targetIndex >= allColumns.length
+            ) {
+                throw new Error("Invalid position values");
+            }
+
+            const [movedColumn] = allColumns.splice(sourceIndex, 1);
+            allColumns.splice(targetIndex, 0, movedColumn);
+
+            // Reassign positions
+            const updates = allColumns.map((col, index) => {
+                if (col.position !== index) {
+                    col.position = index;
+                    return col.save({ transaction: t });
+                }
+            }).filter(Boolean); // remove undefined
+
+            await Promise.all(updates);
+        });
+
+        res.status(200).json({ message: "Column moved successfully" });
+    } catch (err) {
+        console.error("Error in moveColumn:", err);
+        res.status(500).json({ message: "Couldn't move column" });
+    }
+};
+
+module.exports = { createColumn, getColumnsByBoard, editColumn, deleteColumn, moveColumn };
