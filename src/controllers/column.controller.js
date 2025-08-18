@@ -9,9 +9,32 @@ const createColumn = async (req, res) => {
 
         const foundBoard = await board.findOne({ where: { id: boardId, user_id: req.userId } });
         if (!foundBoard) return res.status(403).json({ message: "Forbidden: Board not found or not yours" });
+        // console.log(foundBoard)
+        const foundColumns = await column.findAll({
+            where: { board_id: foundBoard.dataValues.id },
+            attributes: ['position'],
+            order: [['position', 'ASC']]
+        })
 
-        const createdColumn = await column.create({ name, board_id: boardId });
+        let position;
+        if (foundColumns.length === 0) {
+            position = 0;
+
+        } else {
+            let length = foundColumns.length
+            console.log(length)
+            position = foundColumns[length - 1].dataValues.position + 1
+
+
+
+        }
+
+
+
+        const createdColumn = await column.create({ name, board_id: boardId,position:position });
         res.status(200).json({ message: "success", createdColumn: createdColumn.dataValues });
+        // res.status(200).json({ message: "success" });
+
     } catch (err) {
         console.log(err);
         res.status(500).json({ message: "Couldn't create new column" });
@@ -67,10 +90,10 @@ const deleteColumn = async (req, res) => {
     }
 };
 const moveColumn = async (req, res) => {
-    
 
-    const {columnId, sourceIndex, targetIndex } = req.body;
-    const id=columnId
+
+    const { columnId, sourceIndex, targetIndex } = req.body;
+    const id = columnId
     console.log("BODY:", req.body);
 
     if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
