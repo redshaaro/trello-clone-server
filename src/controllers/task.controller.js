@@ -73,6 +73,9 @@ const createtask = async (req, res) => {
 // ✅ GET task by ID if it belongs to the user
 const gettaskById = async (req, res) => {
   const { id } = req.params;
+  console.log("hello from get task by id")
+
+  console.log(id)
 
   try {
     const foundTask = await task.findOne({
@@ -101,9 +104,10 @@ const gettaskById = async (req, res) => {
 // ✅ UPDATE task title if it's in a board of the current user
 const edittask = async (req, res) => {
   const { id } = req.params;
-  const { title } = req.body;
+  const { title, description, status } = req.body;
 
   try {
+    // make sure the task belongs to the user
     const foundTask = await task.findOne({
       where: { id },
       include: {
@@ -119,12 +123,18 @@ const edittask = async (req, res) => {
       return res.status(403).json({ message: "Forbidden: Task not found or not yours" });
     }
 
-    await task.update({ title }, { where: { id } });
+    // update only allowed fields
+    await task.update(
+      { title, description, status },
+      { where: { id } }
+    );
 
-    res.status(200).json({ message: "success", editedtask: title });
+    const updatedTask = await task.findByPk(id);
+
+    res.status(200).json({ message: "success", editedtask: updatedTask });
 
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.status(500).json({ message: "Couldn't update task" });
   }
 };

@@ -7,7 +7,7 @@ router.put("/moveTask", verifyToken, moveTask)
 router.get("/:columnId", verifyToken, getAlltasks)
 router.post("/", verifyToken, createtask)
 
-router.get("/:id", verifyToken, gettaskById)
+router.get("/gettask/:id", verifyToken, gettaskById)
 router.put("/:id", verifyToken, edittask)
 
 router.delete("/:id", verifyToken, deletetask)
