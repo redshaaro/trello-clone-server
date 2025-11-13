@@ -12,36 +12,14 @@ const cors = require("cors")
 require("dotenv").config()
 const app = express()
 
-// CORS Configuration
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'https://kanbanify-rho.vercel.app',
-  process.env.FRONTEND_URL,
-  process.env.CLIENT_URL
-].filter(Boolean);
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, curl)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      // In production, log but allow (for debugging)
-      console.log('CORS request from:', origin);
-      callback(null, true); // Change to callback(new Error('Not allowed by CORS')) to block
-    }
-  },
+// CORS Configuration - Allow all origins
+app.use(cors({
+  origin: '*', // Allow all origins
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400 // Cache preflight for 24 hours
-};
+}));
 
-app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
