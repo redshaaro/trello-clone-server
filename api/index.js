@@ -1,20 +1,21 @@
 // Vercel serverless function entry point
 const app = require('../src/app');
 
-// Export as serverless function with CORS wrapper
-module.exports = async (req, res) => {
-  // Set CORS headers on every response
+// Export handler for Vercel
+module.exports = (req, res) => {
+  // CRITICAL: Set CORS headers FIRST, before anything else
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   
-  // Handle preflight
+  // Handle OPTIONS preflight immediately
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    res.status(200).end();
+    return;
   }
   
-  // Pass to Express app
-  return app(req, res);
+  // For all other requests, pass to Express
+  app(req, res);
 };
 
