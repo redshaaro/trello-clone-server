@@ -11,8 +11,33 @@ const assignees = require("./routes/assignees.router");
 const cors = require("cors")
 require("dotenv").config()
 const app = express()
-app.use(express.json())
-app.use(cors());
+
+// CORS Configuration for production and development
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests from frontend URLs (both development and production)
+    const allowedOrigins = [
+      'http://localhost:5173', // Development frontend
+      'http://localhost:3000', // Development alternate
+      'https://kanbanify-rho.vercel.app', // Production frontend
+      process.env.FRONTEND_URL // From environment variable
+    ].filter(Boolean); // Remove undefined values
+
+    // Allow requests with no origin (like mobile apps, Postman, curl)
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true, // Allow cookies and authorization headers
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allowed methods
+  allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+};
+
+app.use(cors(corsOptions));
+app.use(express.json());
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -80,5 +105,22 @@ app.use("/api/tasks", assignees); // Task assignees routes
 
 app.use("/api/auth", auth)
 
+// 404 handler for undefined routes
+app.use((req, res) => {
+    res.status(404).json({ 
+        error: 'Route not found',
+        path: req.path,
+        method: req.method
+    });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+    console.error('Global error handler:', err);
+    res.status(err.status || 500).json({
+        error: err.message || 'Internal server error',
+        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    });
+});
 
 module.exports = app
