@@ -23,6 +23,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Handle preflight requests explicitly
+app.options('*', cors());
+
 // Health check endpoint
 app.get("/health", (req, res) => {
     res.status(200).json({ 
