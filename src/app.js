@@ -12,32 +12,38 @@ const cors = require("cors")
 require("dotenv").config()
 const app = express()
 
-// CORS Configuration for production and development
+// CORS Configuration
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://kanbanify-rho.vercel.app',
+  process.env.FRONTEND_URL,
+  process.env.CLIENT_URL
+].filter(Boolean);
+
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests from frontend URLs (both development and production)
-    const allowedOrigins = [
-      'http://localhost:5173', // Development frontend
-      'http://localhost:3000', // Development alternate
-      'https://kanbanify-rho.vercel.app', // Production frontend
-      process.env.FRONTEND_URL // From environment variable
-    ].filter(Boolean); // Remove undefined values
-
-    // Allow requests with no origin (like mobile apps, Postman, curl)
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    // Allow requests with no origin (mobile apps, Postman, curl)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      // In production, log but allow (for debugging)
+      console.log('CORS request from:', origin);
+      callback(null, true); // Change to callback(new Error('Not allowed by CORS')) to block
     }
   },
-  credentials: true, // Allow cookies and authorization headers
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allowed methods
-  allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
-  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400 // Cache preflight for 24 hours
 };
 
 app.use(cors(corsOptions));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -95,6 +101,7 @@ if (process.env.NODE_ENV !== 'production') {
     });
 }
 
+// API routes with /api prefix (standard)
 app.use("/api/boards", boards)
 app.use("/api/columns", columns)
 app.use("/api/tasks", tasks)
@@ -102,8 +109,14 @@ app.use("/api/users", userRoutes);
 app.use("/api/tasks", comments); // Task comments routes
 app.use("/api/tasks", labels); // Task labels routes
 app.use("/api/tasks", assignees); // Task assignees routes
-
 app.use("/api/auth", auth)
+
+// Fallback routes without /api prefix (for compatibility)
+app.use("/boards", boards)
+app.use("/columns", columns)
+app.use("/tasks", tasks)
+app.use("/users", userRoutes);
+app.use("/auth", auth)
 
 // 404 handler for undefined routes
 app.use((req, res) => {
