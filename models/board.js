@@ -10,13 +10,21 @@ module.exports = (sequelize, DataTypes) => {
         key: 'id'
       },
       onDelete: 'CASCADE'
+    },
+    background_url: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: null
     }
   });
 
   board.associate = function(models) {
     board.belongsTo(models.user, { foreignKey: 'user_id' });
-    board.hasMany(models.column, { foreignKey: 'board_id' }); // ✅ Add this
+    board.hasMany(models.column, { foreignKey: 'board_id' });
+    board.hasMany(models.board_member, { foreignKey: 'board_id' });
+    board.hasMany(models.invitation, { foreignKey: 'board_id' });
   };
+ 
 
   return board;
 };

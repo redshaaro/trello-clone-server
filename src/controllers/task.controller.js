@@ -1,31 +1,65 @@
-const { task, column, board } = require("../../models");
+const { task, column, board, board_member } = require("../../models");
 const { Op } = require("sequelize");
-
-const { sequelize } = require("../../models"); // adjust path as needed
+const { sequelize } = require("../../models");
 
 
 // ✅ GET all tasks for a specific column (and verify it's the user's board)
-const getAlltasks = async (req, res) => {
-  const { columnId } = req.params;
+const getAllTasks = async (req, res) => {
+  const { id } = req.params; // This is column_id
+
   try {
+    // Find the column and its board
     const foundColumn = await column.findOne({
-      where: { id: columnId },
-      include: {
+      where: { id },
+      include: { 
         model: board,
-        where: { user_id: req.userId }
+        required: true
       }
     });
 
     if (!foundColumn) {
-      return res.status(403).json({ message: "Forbidden: Column not found or not yours" });
+      return res.status(404).json({ message: "Column not found" });
     }
 
-    const tasks = await task.findAll({ where: { column_id: columnId } });
+    if (!foundColumn.board) {
+      return res.status(500).json({ message: "Board association not loaded properly" });
+    }
+
+    const boardId = Number(foundColumn.board_id);
+    const boardOwnerId = Number(foundColumn.board.user_id);
+    const currentUserId = Number(req.user.id);
+
+    // Check if user is owner or member
+    const isOwner = boardOwnerId === currentUserId;
+    const isMember = await board_member.findOne({
+      where: { board_id: boardId, user_id: req.user.id }
+    });
+
+    if (!isOwner && !isMember) {
+      return res.status(403).json({ 
+        message: "Forbidden: You don't have access to this board",
+        debug: {
+          currentUserId: currentUserId,
+          boardOwnerId: boardOwnerId,
+          boardId: boardId,
+          isOwner: isOwner,
+          hasMemberRecord: !!isMember,
+          memberRole: isMember ? isMember.role : null
+        }
+      });
+    }
+
+    // Fetch tasks in the column
+    const tasks = await task.findAll({ 
+      where: { column_id: id },
+      order: [['position', 'ASC']]
+    });
+    
     res.status(200).json({ message: "success", tasks });
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: "Couldn't fetch tasks" });
+    console.error("Get tasks error:", err);
+    res.status(500).json({ message: "Couldn't fetch tasks", error: err.message });
   }
 };
 
@@ -33,18 +67,49 @@ const getAlltasks = async (req, res) => {
 const createtask = async (req, res) => {
   const { title, description, status, column_id } = req.body;
 
+  // Input validation
+  if (!title || title.trim().length === 0) {
+    return res.status(400).json({ message: "Task title is required" });
+  }
+
+  if (title.length > 255) {
+    return res.status(400).json({ message: "Task title must be less than 255 characters" });
+  }
+
+  if (!column_id) {
+    return res.status(400).json({ message: "Column ID is required" });
+  }
+
+  // Validate status if provided
+  if (status && !['todo', 'in-progress', 'done'].includes(status)) {
+    return res.status(400).json({ message: "Invalid status. Must be 'todo', 'in-progress', or 'done'" });
+  }
+
   try {
     const foundColumn = await column.findOne({
       where: { id: column_id },
-      include: {
-        model: board,
-        where: { user_id: req.userId }
-      }
+      include: { model: board }
     });
 
     if (!foundColumn) {
-      return res.status(403).json({ message: "Forbidden: Column not found or not yours" });
+      return res.status(404).json({ message: "Column not found" });
     }
+
+    // Check if user is owner or member
+    const isOwner = foundColumn.board.user_id === req.user.id;
+    const isMember = await board_member.findOne({
+      where: { board_id: foundColumn.board_id, user_id: req.user.id }
+    });
+
+    if (!isOwner && !isMember) {
+      return res.status(403).json({ message: "Forbidden: You don't have access to this board" });
+    }
+
+    // Check role permissions - VIEWER can't create tasks
+    if (isMember && isMember.role === 'VIEWER') {
+      return res.status(403).json({ message: "Forbidden: Viewers cannot create tasks" });
+    }
+
     const lastTask = await task.findOne({
       where: { column_id },
       order: [['position', 'DESC']]
@@ -53,19 +118,17 @@ const createtask = async (req, res) => {
     const newPosition = lastTask ? lastTask.position + 1 : 0;
 
     const createdtask = await task.create({
-      title,
-      description,
-      status,
+      title: title.trim(),
+      description: description || '',
+      status: status || 'todo',
       column_id,
       position: newPosition
     });
 
-
-
-    res.status(200).json({ message: "success", createdtask: createdtask.dataValues });
+    res.status(201).json({ message: "success", createdtask });
 
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.status(500).json({ message: "Couldn't create task" });
   }
 };
@@ -73,30 +136,34 @@ const createtask = async (req, res) => {
 // ✅ GET task by ID if it belongs to the user
 const gettaskById = async (req, res) => {
   const { id } = req.params;
-  console.log("hello from get task by id")
-
-  console.log(id)
 
   try {
     const foundTask = await task.findOne({
       where: { id },
       include: {
         model: column,
-        include: {
-          model: board,
-          where: { user_id: req.userId }
-        }
+        include: { model: board }
       }
     });
 
     if (!foundTask) {
-      return res.status(403).json({ message: "Forbidden: Task not found or not yours" });
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    // Check if user is owner or member
+    const isOwner = foundTask.column.board.user_id === req.user.id;
+    const isMember = await board_member.findOne({
+      where: { board_id: foundTask.column.board_id, user_id: req.user.id }
+    });
+
+    if (!isOwner && !isMember) {
+      return res.status(403).json({ message: "Forbidden: You don't have access to this board" });
     }
 
     res.status(200).json({ message: "success", task: foundTask });
 
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.status(500).json({ message: "Couldn't fetch task" });
   }
 };
@@ -106,28 +173,55 @@ const edittask = async (req, res) => {
   const { id } = req.params;
   const { title, description, status } = req.body;
 
+  // Input validation
+  if (title !== undefined && title.trim().length === 0) {
+    return res.status(400).json({ message: "Task title cannot be empty" });
+  }
+
+  if (title && title.length > 255) {
+    return res.status(400).json({ message: "Task title must be less than 255 characters" });
+  }
+
+  // Validate status if provided
+  if (status && !['todo', 'in-progress', 'done'].includes(status)) {
+    return res.status(400).json({ message: "Invalid status. Must be 'todo', 'in-progress', or 'done'" });
+  }
+
   try {
-    // make sure the task belongs to the user
     const foundTask = await task.findOne({
       where: { id },
       include: {
         model: column,
-        include: {
-          model: board,
-          where: { user_id: req.userId }
-        }
+        include: { model: board }
       }
     });
 
     if (!foundTask) {
-      return res.status(403).json({ message: "Forbidden: Task not found or not yours" });
+      return res.status(404).json({ message: "Task not found" });
     }
 
-    // update only allowed fields
-    await task.update(
-      { title, description, status },
-      { where: { id } }
-    );
+    // Check if user is owner or member
+    const isOwner = foundTask.column.board.user_id === req.user.id;
+    const isMember = await board_member.findOne({
+      where: { board_id: foundTask.column.board_id, user_id: req.user.id }
+    });
+
+    if (!isOwner && !isMember) {
+      return res.status(403).json({ message: "Forbidden: You don't have access to this board" });
+    }
+
+    // Check role permissions - VIEWER can't edit tasks
+    if (isMember && isMember.role === 'VIEWER') {
+      return res.status(403).json({ message: "Forbidden: Viewers cannot edit tasks" });
+    }
+
+    // update only allowed fields (only update fields that are provided)
+    const updateData = {};
+    if (title !== undefined) updateData.title = title.trim();
+    if (description !== undefined) updateData.description = description;
+    if (status !== undefined) updateData.status = status;
+
+    await task.update(updateData, { where: { id } });
 
     const updatedTask = await task.findByPk(id);
 
@@ -148,15 +242,27 @@ const deletetask = async (req, res) => {
       where: { id },
       include: {
         model: column,
-        include: {
-          model: board,
-          where: { user_id: req.userId }
-        }
+        include: { model: board }
       }
     });
 
     if (!foundTask) {
-      return res.status(403).json({ message: "Forbidden: Task not found or not yours" });
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    // Check if user is owner or member
+    const isOwner = foundTask.column.board.user_id === req.user.id;
+    const isMember = await board_member.findOne({
+      where: { board_id: foundTask.column.board_id, user_id: req.user.id }
+    });
+
+    if (!isOwner && !isMember) {
+      return res.status(403).json({ message: "Forbidden: You don't have access to this board" });
+    }
+
+    // Check role permissions - VIEWER can't delete, MEMBER can delete
+    if (isMember && isMember.role === 'VIEWER') {
+      return res.status(403).json({ message: "Forbidden: Viewers cannot delete tasks" });
     }
 
     await task.destroy({ where: { id } });
@@ -164,7 +270,7 @@ const deletetask = async (req, res) => {
     res.status(200).json({ message: "success", deletedtask: id });
 
   } catch (err) {
-    console.log(err);
+    console.error("Delete task error:", err);
     res.status(500).json({ message: "Couldn't delete task" });
   }
 };
@@ -177,9 +283,31 @@ const moveTask = async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const taskfound = await task.findByPk(taskId);
+    const taskfound = await task.findOne({
+      where: { id: taskId },
+      include: {
+        model: column,
+        include: { model: board }
+      }
+    });
+
     if (!taskfound) {
       return res.status(404).json({ error: "Task not found" });
+    }
+
+    // Check if user has access and can move tasks
+    const isOwner = taskfound.column.board.user_id === req.user.id;
+    const isMember = await board_member.findOne({
+      where: { board_id: taskfound.column.board_id, user_id: req.user.id }
+    });
+
+    if (!isOwner && !isMember) {
+      return res.status(403).json({ error: "Forbidden: You don't have access to this board" });
+    }
+
+    // Check role permissions - VIEWER can't move tasks
+    if (isMember && isMember.role === 'VIEWER') {
+      return res.status(403).json({ error: "Forbidden: Viewers cannot move tasks" });
     }
 
     const sourcePosition = taskfound.position;
@@ -257,4 +385,4 @@ const moveTask = async (req, res) => {
 
 
 
-module.exports = { getAlltasks, createtask, gettaskById, edittask, deletetask, moveTask };
+module.exports = { getAllTasks, createtask, gettaskById, edittask, deletetask, moveTask };

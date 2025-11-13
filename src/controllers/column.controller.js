@@ -1,58 +1,80 @@
-const { column, board, sequelize } = require("../../models");
+const { column, board, board_member, sequelize } = require("../../models");
 
 
 const createColumn = async (req, res) => {
     const { name, boardId } = req.body;
-    if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
+    if (!req.user.id) return res.status(401).json({ message: "Unauthorized" });
+
+    // Input validation
+    if (!name || name.trim().length === 0) {
+        return res.status(400).json({ message: "Column name is required" });
+    }
+
+    if (name.length > 100) {
+        return res.status(400).json({ message: "Column name must be less than 100 characters" });
+    }
+
+    if (!boardId) {
+        return res.status(400).json({ message: "Board ID is required" });
+    }
 
     try {
+        // Check if user has access to this board (owner or member)
+        const foundBoard = await board.findOne({ where: { id: boardId } });
+        if (!foundBoard) return res.status(404).json({ message: "Board not found" });
 
-        const foundBoard = await board.findOne({ where: { id: boardId, user_id: req.userId } });
-        if (!foundBoard) return res.status(403).json({ message: "Forbidden: Board not found or not yours" });
-        // console.log(foundBoard)
+        // Check if user is owner or member
+        const isOwner = foundBoard.user_id === req.user.id;
+        const isMember = await board_member.findOne({
+            where: { board_id: boardId, user_id: req.user.id }
+        });
+
+        if (!isOwner && !isMember) {
+            return res.status(403).json({ message: "Forbidden: You don't have access to this board" });
+        }
+
+        // Check role permissions - VIEWER can't create columns
+        if (isMember && isMember.role === 'VIEWER') {
+            return res.status(403).json({ message: "Forbidden: Viewers cannot create columns" });
+        }
+
         const foundColumns = await column.findAll({
-            where: { board_id: foundBoard.dataValues.id },
+            where: { board_id: boardId },
             attributes: ['position'],
             order: [['position', 'ASC']]
-        })
+        });
 
         let position;
         if (foundColumns.length === 0) {
             position = 0;
-
         } else {
-            let length = foundColumns.length
-            console.log(length)
-            position = foundColumns[length - 1].dataValues.position + 1
-
-
-
+            position = foundColumns[foundColumns.length - 1].position + 1;
         }
 
-
-
-        const createdColumn = await column.create({ name, board_id: boardId,position:position });
-        res.status(200).json({ message: "success", createdColumn: createdColumn.dataValues });
-        // res.status(200).json({ message: "success" });
+        const createdColumn = await column.create({ name: name.trim(), board_id: boardId, position });
+        res.status(201).json({ message: "success", createdColumn });
 
     } catch (err) {
-        console.log(err);
+        console.error(err);
         res.status(500).json({ message: "Couldn't create new column" });
     }
 };
 
 const getColumnsByBoard = async (req, res) => {
-    const { boardId } = req.params;
-    if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
+    const { id } = req.params;
+    
 
     try {
-        const foundBoard = await board.findOne({ where: { id: boardId, user_id: req.userId } });
-        if (!foundBoard) return res.status(403).json({ message: "Forbidden: Board not found or not yours" });
+        // const foundBoard = await board.findOne({ where: { id: boardId, user_id: req.user.id } });
+        // if (!foundBoard) return res.status(403).json({ message: "Forbidden: Board not found or not yours" });
 
-        const columns = await column.findAll({ where: { board_id: boardId } });
+        const columns = await column.findAll({ 
+            where: { board_id: id },
+            order: [['position', 'ASC']]
+        });
         res.status(200).json({ message: "Success", columns });
     } catch (err) {
-        console.log(err);
+        console.error("Error fetching columns:", err);
         res.status(500).json({ message: "Couldn't fetch columns" });
     }
 };
@@ -60,63 +82,120 @@ const getColumnsByBoard = async (req, res) => {
 const editColumn = async (req, res) => {
     const { id } = req.params;
     const { name } = req.body;
-    if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
+    if (!req.user.id) return res.status(401).json({ message: "Unauthorized" });
+
+    // Input validation
+    if (!name || name.trim().length === 0) {
+        return res.status(400).json({ message: "Column name is required" });
+    }
+
+    if (name.length > 100) {
+        return res.status(400).json({ message: "Column name must be less than 100 characters" });
+    }
 
     try {
-        const foundColumn = await column.findOne({ where: { id }, include: { model: board, where: { user_id: req.userId } } });
-        if (!foundColumn) return res.status(403).json({ message: "Forbidden: Column not found or not yours" });
+        const foundColumn = await column.findOne({ 
+            where: { id }, 
+            include: { model: board } 
+        });
+        
+        if (!foundColumn) return res.status(404).json({ message: "Column not found" });
 
-        const updated = await column.update({ name }, { where: { id } });
+        // Check if user is owner or member
+        const isOwner = foundColumn.board.user_id === req.user.id;
+        const isMember = await board_member.findOne({
+            where: { board_id: foundColumn.board_id, user_id: req.user.id }
+        });
+
+        if (!isOwner && !isMember) {
+            return res.status(403).json({ message: "Forbidden: You don't have access to this board" });
+        }
+
+        // Check role permissions - VIEWER can't edit columns
+        if (isMember && isMember.role === 'VIEWER') {
+            return res.status(403).json({ message: "Forbidden: Viewers cannot edit columns" });
+        }
+
+        await column.update({ name: name.trim() }, { where: { id } });
+        const updated = await column.findByPk(id);
         res.status(200).json({ message: "success", editedColumn: updated });
     } catch (err) {
-        console.log(err);
+        console.error(err);
         res.status(500).json({ message: "Couldn't update column" });
     }
 };
 
 const deleteColumn = async (req, res) => {
     const { id } = req.params;
-    if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
+    if (!req.user.id) return res.status(401).json({ message: "Unauthorized" });
 
     try {
-        const foundColumn = await column.findOne({ where: { id }, include: { model: board, where: { user_id: req.userId } } });
-        if (!foundColumn) return res.status(403).json({ message: "Forbidden: Column not found or not yours" });
+        const foundColumn = await column.findOne({ 
+            where: { id }, 
+            include: { model: board } 
+        });
+        
+        if (!foundColumn) return res.status(404).json({ message: "Column not found" });
 
-        const deleted = await column.destroy({ where: { id } });
-        res.status(200).json({ message: "success", deletedColumn: deleted });
+        // Check if user is owner or member
+        const isOwner = foundColumn.board.user_id === req.user.id;
+        const isMember = await board_member.findOne({
+            where: { board_id: foundColumn.board_id, user_id: req.user.id }
+        });
+
+        if (!isOwner && !isMember) {
+            return res.status(403).json({ message: "Forbidden: You don't have access to this board" });
+        }
+
+        // Check role permissions - VIEWER and MEMBER can't delete columns, only ADMIN and OWNER
+        if (isMember && (isMember.role === 'VIEWER' || isMember.role === 'MEMBER')) {
+            return res.status(403).json({ message: "Forbidden: Only admins and owners can delete columns" });
+        }
+
+        await column.destroy({ where: { id } });
+        res.status(200).json({ message: "success", deletedColumn: id });
     } catch (err) {
-        console.log(err);
+        console.error(err);
         res.status(500).json({ message: "Couldn't delete column" });
     }
 };
 const moveColumn = async (req, res) => {
-
-
     const { columnId, sourceIndex, targetIndex } = req.body;
-    const id = columnId
-    console.log("BODY:", req.body);
+    const id = columnId;
 
-    if (!req.userId) return res.status(401).json({ message: "Unauthorized" });
+    if (!req.user.id) return res.status(401).json({ message: "Unauthorized" });
 
     if (sourceIndex === undefined || targetIndex === undefined) {
         return res.status(400).json({ message: "Missing source or target position" });
     }
 
     try {
-        // Ensure the column belongs to the logged-in user
+        // Find the column
         const foundColumn = await column.findOne({
             where: { id },
-            include: {
-                model: board,
-                where: { user_id: req.userId },
-            },
+            include: { model: board }
         });
 
         if (!foundColumn) {
-            return res.status(403).json({ message: "Forbidden: Column not found or not yours" });
+            return res.status(404).json({ message: "Column not found" });
         }
 
         const boardId = foundColumn.board_id;
+
+        // Check if user is owner or member
+        const isOwner = foundColumn.board.user_id === req.user.id;
+        const isMember = await board_member.findOne({
+            where: { board_id: boardId, user_id: req.user.id }
+        });
+
+        if (!isOwner && !isMember) {
+            return res.status(403).json({ message: "Forbidden: You don't have access to this board" });
+        }
+
+        // Check role permissions - VIEWER can't move columns
+        if (isMember && isMember.role === 'VIEWER') {
+            return res.status(403).json({ message: "Forbidden: Viewers cannot move columns" });
+        }
 
         await sequelize.transaction(async (t) => {
             // Fetch all columns of the board in order
